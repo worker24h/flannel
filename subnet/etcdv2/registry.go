@@ -97,6 +97,7 @@ func newEtcdSubnetRegistry(config *EtcdConfig, cliNewFunc etcdNewFunc) (Registry
 		etcdCfg:      config,
 		networkRegex: regexp.MustCompile(config.Prefix + `/([^/]*)(/|/config)?$`),
 	}
+	//回调函数设置
 	if cliNewFunc != nil {
 		r.cliNewFunc = cliNewFunc
 	} else {
@@ -114,7 +115,7 @@ func newEtcdSubnetRegistry(config *EtcdConfig, cliNewFunc etcdNewFunc) (Registry
 
 func (esr *etcdSubnetRegistry) getNetworkConfig(ctx context.Context) (string, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "config")
-	resp, err := esr.client().Get(ctx, key, &etcd.GetOptions{Quorum: true})
+	resp, err := esr.client().Get(ctx, key, &etcd.GetOptions{Quorum: true}) //向etcd获取数据
 	if err != nil {
 		return "", err
 	}

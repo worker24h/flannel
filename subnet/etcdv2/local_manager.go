@@ -34,7 +34,7 @@ const (
 
 type LocalManager struct {
 	registry       Registry
-	previousSubnet ip.IP4Net
+	previousSubnet ip.IP4Net // flannel子网信息
 }
 
 type watchCursor struct {
@@ -70,7 +70,7 @@ func (c watchCursor) String() string {
 }
 
 func NewLocalManager(config *EtcdConfig, prevSubnet ip.IP4Net) (Manager, error) {
-	r, err := newEtcdSubnetRegistry(config, nil)
+	r, err := newEtcdSubnetRegistry(config, nil) // 生成Registry对象
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +85,17 @@ func newLocalManager(r Registry, prevSubnet ip.IP4Net) Manager {
 }
 
 func (m *LocalManager) GetNetworkConfig(ctx context.Context) (*Config, error) {
-	cfg, err := m.registry.getNetworkConfig(ctx)
+	/**
+	 * registry.go文件
+	 * registry是实际指向etcd 下面通过getNetworkConfig实际是发送http请求到etcd，
+	 * 从etcd中获取数据
+	 */
+	cfg, err := m.registry.getNetworkConfig(ctx) //此处的registry对象是上面NewLocalManager函数中创建的
 	if err != nil {
 		return nil, err
 	}
 
-	return ParseConfig(cfg)
+	return ParseConfig(cfg) // 调用config.go文件中ParseConfig函数
 }
 
 func (m *LocalManager) AcquireLease(ctx context.Context, attrs *LeaseAttrs) (*Lease, error) {

@@ -23,9 +23,9 @@ import (
 )
 
 type ExternalInterface struct {
-	Iface     *net.Interface
-	IfaceAddr net.IP
-	ExtAddr   net.IP
+	Iface     *net.Interface // 网卡信息 默认是出口ip所在网卡 即route信息中gateway所在网卡
+	IfaceAddr net.IP         // 网卡ip
+	ExtAddr   net.IP         // 外部ip
 }
 
 // Besides the entry points in the Backend interface, the backend's New()

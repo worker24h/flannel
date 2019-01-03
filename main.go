@@ -70,6 +70,7 @@ func (t *flagSlice) Set(val string) error {
 	return nil
 }
 
+// 命令航参数结构体
 type CmdLineOpts struct {
 	etcdEndpoints          string
 	etcdPrefix             string
@@ -83,8 +84,8 @@ type CmdLineOpts struct {
 	kubeSubnetMgr          bool
 	kubeApiUrl             string
 	kubeConfigFile         string
-	iface                  flagSlice
-	ifaceRegex             flagSlice
+	iface                  flagSlice // 完整网卡名称
+	ifaceRegex             flagSlice // 正则表达式 网卡名称
 	ipMasq                 bool
 	subnetFile             string
 	subnetDir              string
@@ -101,6 +102,9 @@ var (
 	flannelFlags   = flag.NewFlagSet("flannel", flag.ExitOnError)
 )
 
+/**
+ * init函数 先于main函数执行
+ */
 func init() {
 	flannelFlags.StringVar(&opts.etcdEndpoints, "etcd-endpoints", "http://127.0.0.1:4001,http://127.0.0.1:2379", "a comma-delimited list of etcd endpoints")
 	flannelFlags.StringVar(&opts.etcdPrefix, "etcd-prefix", "/coreos.com/network", "etcd prefix")
@@ -109,8 +113,10 @@ func init() {
 	flannelFlags.StringVar(&opts.etcdCAFile, "etcd-cafile", "", "SSL Certificate Authority file used to secure etcd communication")
 	flannelFlags.StringVar(&opts.etcdUsername, "etcd-username", "", "username for BasicAuth to etcd")
 	flannelFlags.StringVar(&opts.etcdPassword, "etcd-password", "", "password for BasicAuth to etcd")
+	//创建自定义flag 需要自己实现赋值、读取接口 如上面String(), Set()函数
 	flannelFlags.Var(&opts.iface, "iface", "interface to use (IP or name) for inter-host communication. Can be specified multiple times to check each option in order. Returns the first match found.")
 	flannelFlags.Var(&opts.ifaceRegex, "iface-regex", "regex expression to match the first interface to use (IP or name) for inter-host communication. Can be specified multiple times to check each regex in order. Returns the first match found. Regexes are checked after specific interfaces specified by the iface option have already been checked.")
+
 	flannelFlags.StringVar(&opts.subnetFile, "subnet-file", "/run/flannel/subnet.env", "filename where env variables (subnet, MTU, ... ) will be written to")
 	flannelFlags.StringVar(&opts.publicIP, "public-ip", "", "IP accessible by other nodes for inter-host communication")
 	flannelFlags.IntVar(&opts.subnetLeaseRenewMargin, "subnet-lease-renew-margin", 60, "subnet lease renewal margin, in minutes, ranging from 1 to 1439")
@@ -132,7 +138,7 @@ func init() {
 	copyFlag("log_backtrace_at")
 
 	// Define the usage function
-	flannelFlags.Usage = usage
+	flannelFlags.Usage = usage //覆盖默认的Usage函数
 
 	// now parse command line args
 	flannelFlags.Parse(os.Args[1:])
@@ -148,11 +154,17 @@ func usage() {
 	os.Exit(0)
 }
 
+/**
+ * 创建子网管理对象
+ * @param 无
+ * @return subnet.Manager 子网管理对象
+ * @return error 错误信息对象
+ */
 func newSubnetManager() (subnet.Manager, error) {
-	if opts.kubeSubnetMgr {
+	if opts.kubeSubnetMgr { // 如果kubeSubnetMgr是true则表示采用kubenets方式管理网络
 		return kube.NewSubnetManager(opts.kubeApiUrl, opts.kubeConfigFile)
 	}
-
+	// 采用etcd方式管理网络 etcd相关配置信息
 	cfg := &etcdv2.EtcdConfig{
 		Endpoints: strings.Split(opts.etcdEndpoints, ","),
 		Keyfile:   opts.etcdKeyfile,
@@ -164,13 +176,14 @@ func newSubnetManager() (subnet.Manager, error) {
 	}
 
 	// Attempt to renew the lease for the subnet specified in the subnetFile
+	// 读取配置文件 获取子网配置信息
 	prevSubnet := ReadSubnetFromSubnetFile(opts.subnetFile)
 
 	return etcdv2.NewLocalManager(cfg, prevSubnet)
 }
 
 func main() {
-	if opts.version {
+	if opts.version { //输出版本信息
 		fmt.Fprintln(os.Stderr, version.Version)
 		os.Exit(0)
 	}
@@ -178,6 +191,7 @@ func main() {
 	flagutil.SetFlagsFromEnv(flannelFlags, "FLANNELD")
 
 	// Validate flags
+	// 子网续约时间不能大于1天 单位是分钟
 	if opts.subnetLeaseRenewMargin >= 24*60 || opts.subnetLeaseRenewMargin <= 0 {
 		log.Error("Invalid subnet-lease-renew-margin option, out of acceptable range")
 		os.Exit(1)
@@ -187,7 +201,7 @@ func main() {
 	var extIface *backend.ExternalInterface
 	var err error
 	// Check the default interface only if no interfaces are specified
-	if len(opts.iface) == 0 && len(opts.ifaceRegex) == 0 {
+	if len(opts.iface) == 0 && len(opts.ifaceRegex) == 0 { //没有指定网卡 则自己查找
 		extIface, err = LookupExtIface("", "")
 		if err != nil {
 			log.Error("Failed to find any valid interface to use: ", err)
@@ -219,7 +233,7 @@ func main() {
 				}
 			}
 		}
-
+		// 没有找到合适的网卡 直接退出
 		if extIface == nil {
 			// Exit if any of the specified interfaces do not match
 			log.Error("Failed to find interface to use that matches the interfaces and/or regexes provided")
@@ -227,7 +241,7 @@ func main() {
 		}
 	}
 
-	sm, err := newSubnetManager()
+	sm, err := newSubnetManager() //创建子网管理对象
 	if err != nil {
 		log.Error("Failed to create SubnetManager: ", err)
 		os.Exit(1)
@@ -235,26 +249,33 @@ func main() {
 	log.Infof("Created subnet manager: %s", sm.Name())
 
 	// Register for SIGINT and SIGTERM
+	// 只接受SIGINT、SIGTERM两种信号
 	log.Info("Installing signal handlers")
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 
 	// This is the main context that everything should run in.
 	// All spawned goroutines should exit when cancel is called on this context.
-	// Go routines spawned from main.go coordinate using a WaitGroup. This provides a mechanism to allow the shutdownHandler goroutine
+	// Go routines spawned from main.go coordinate using a WaitGroup.
+	// This provides a mechanism(机制) to allow the shutdownHandler goroutine
 	// to block until all the goroutines return . If those goroutines spawn other goroutines then they are responsible for
 	// blocking and returning only when cancel() is called.
+	// 返回值：
+	// ctx 全局上下文  cancel 函数指针
+	// Background() 返回一个空白context,不能被cancel
+	// WitchCancel(parent) 继承parent后返回一个新的context，该context可以被cancel
 	ctx, cancel := context.WithCancel(context.Background())
-	wg := sync.WaitGroup{}
+	wg := sync.WaitGroup{} //go routines 同步手段
 
-	wg.Add(1)
+	wg.Add(1) //此处1 表示等待一个go routines
 	go func() {
 		shutdownHandler(ctx, sigs, cancel)
-		wg.Done()
+		wg.Done() //通知Wait()返回
 	}()
 
 	if opts.healthzPort > 0 {
 		// It's not super easy to shutdown the HTTP server so don't attempt to stop it cleanly
+		//关闭HTTP服务并不是很容易，因此不要试图干净的停止它
 		go mustRunHealthz()
 	}
 
@@ -270,21 +291,21 @@ func main() {
 	be, err := bm.GetBackend(config.BackendType)
 	if err != nil {
 		log.Errorf("Error fetching backend: %s", err)
-		cancel()
-		wg.Wait()
+		cancel()  // 促使context.done()返回
+		wg.Wait() // 等待同步
 		os.Exit(1)
 	}
 
 	bn, err := be.RegisterNetwork(ctx, config)
 	if err != nil {
 		log.Errorf("Error registering network: %s", err)
-		cancel()
-		wg.Wait()
+		cancel()  // 促使context.done()返回
+		wg.Wait() // 等待同步
 		os.Exit(1)
 	}
 
 	// Set up ipMasq if needed
-	if opts.ipMasq {
+	if opts.ipMasq { // 开启防火墙 ip-masquerade
 		go network.SetupAndEnsureIPTables(network.MasqRules(config.Network, bn.Lease()))
 	}
 
@@ -326,12 +347,19 @@ func main() {
 	os.Exit(0)
 }
 
+/**
+ * 处理函数
+ * @param ctx 上下文
+ * @param sigs 注册的信号
+ * @param cancel 回调函数
+ */
 func shutdownHandler(ctx context.Context, sigs chan os.Signal, cancel context.CancelFunc) {
 	// Wait for the context do be Done or for the signal to come in to shutdown.
+	// select 会阻塞在这里 只要满足其中一个case就会继续往下执行
 	select {
-	case <-ctx.Done():
+	case <-ctx.Done(): // 表示上下文初始化完成
 		log.Info("Stopping shutdownHandler...")
-	case <-sigs:
+	case <-sigs: //表示发生信号
 		// Call cancel on the context to close everything down.
 		cancel()
 		log.Info("shutdownHandler sent cancel signal...")
@@ -341,10 +369,16 @@ func shutdownHandler(ctx context.Context, sigs chan os.Signal, cancel context.Ca
 	signal.Stop(sigs)
 }
 
+/**
+ * 获取网络配置 (每一秒获取一次 直到成功)
+ * @param ctx 上下文
+ * @param sm  子网管理对象
+ */
 func getConfig(ctx context.Context, sm subnet.Manager) (*subnet.Config, error) {
 	// Retry every second until it succeeds
 	for {
-		config, err := sm.GetNetworkConfig(ctx)
+		//通过etcd获取数据
+		config, err := sm.GetNetworkConfig(ctx) // local_manager.go
 		if err != nil {
 			log.Errorf("Couldn't fetch network config: %s", err)
 		} else if config == nil {
@@ -354,7 +388,7 @@ func getConfig(ctx context.Context, sm subnet.Manager) (*subnet.Config, error) {
 			return config, nil
 		}
 		select {
-		case <-ctx.Done():
+		case <-ctx.Done(): //当调用cancle()或者超时后 这里就返回了
 			return nil, errCanceled
 		case <-time.After(1 * time.Second):
 			fmt.Println("timed out")
@@ -407,6 +441,12 @@ func MonitorLease(ctx context.Context, sm subnet.Manager, bn backend.Network, wg
 	}
 }
 
+/**
+ * 查找外部通信网卡信息
+ * @param ifname 网卡名称 完全匹配
+ * @param ifregex 正则表达式 方式查找网卡
+ * 如果两个参数都没有指定则查找默认路由所在网卡
+ */
 func LookupExtIface(ifname string, ifregex string) (*backend.ExternalInterface, error) {
 	var iface *net.Interface
 	var ifaceAddr net.IP
@@ -473,11 +513,14 @@ func LookupExtIface(ifname string, ifregex string) (*backend.ExternalInterface, 
 		}
 	} else {
 		log.Info("Determining IP address of default interface")
+		// linux   通过route信息获取gateway所在网卡
+		// windows 通过netsh命令行获取信息netsh interface ipv4 show addresses
 		if iface, err = ip.GetDefaultGatewayIface(); err != nil {
 			return nil, fmt.Errorf("failed to get default interface: %s", err)
 		}
 	}
 
+	// 进入到这里表示 网卡获取成功
 	if ifaceAddr == nil {
 		ifaceAddr, err = ip.GetIfaceIP4Addr(iface)
 		if err != nil {
@@ -494,7 +537,7 @@ func LookupExtIface(ifname string, ifregex string) (*backend.ExternalInterface, 
 	var extAddr net.IP
 
 	if len(opts.publicIP) > 0 {
-		extAddr = net.ParseIP(opts.publicIP)
+		extAddr = net.ParseIP(opts.publicIP) //根据ip字符串 生成IP对象
 		if extAddr == nil {
 			return nil, fmt.Errorf("invalid public IP address: %s", opts.publicIP)
 		}
@@ -513,6 +556,14 @@ func LookupExtIface(ifname string, ifregex string) (*backend.ExternalInterface, 
 	}, nil
 }
 
+/**
+ * 报文子网配置文件
+ * @param path 配置文件路径
+ * @param nw network
+ * @param ipMasq 是否开启
+ * 说明：
+ *    ip-masq 与防火墙中MASQUERADE类似。具体可百度iptables MASQUERADE相关介绍
+ */
 func WriteSubnetFile(path string, nw ip.IP4Net, ipMasq bool, bn backend.Network) error {
 	dir, name := filepath.Split(path)
 	os.MkdirAll(dir, 0755)
@@ -543,6 +594,9 @@ func WriteSubnetFile(path string, nw ip.IP4Net, ipMasq bool, bn backend.Network)
 	//TODO - is this safe? What if it's not on the same FS?
 }
 
+/**
+ * 保活检查
+ */
 func mustRunHealthz() {
 	address := net.JoinHostPort(opts.healthzIP, strconv.Itoa(opts.healthzPort))
 	log.Infof("Start healthz server on %s", address)
