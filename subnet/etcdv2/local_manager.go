@@ -98,6 +98,12 @@ func (m *LocalManager) GetNetworkConfig(ctx context.Context) (*Config, error) {
 	return ParseConfig(cfg) // 调用config.go文件中ParseConfig函数
 }
 
+/**
+ * 获取租约信息
+ * @param ctx 上下文
+ * @param attrs 属性信息
+ * @return 返回租约信息
+ */
 func (m *LocalManager) AcquireLease(ctx context.Context, attrs *LeaseAttrs) (*Lease, error) {
 	config, err := m.GetNetworkConfig(ctx)
 	if err != nil {
@@ -139,13 +145,23 @@ func findLeaseBySubnet(leases []Lease, subnet ip.IP4Net) *Lease {
 	return nil
 }
 
+/**
+ * 获取租约
+ * @param ctx 上下文
+ * @param config 配置信息
+ * @param extIaddr 外部ip
+ * @param attrs 租约属性信息
+ * @return 返回租约对象
+ */
 func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extIaddr ip.IP4, attrs *LeaseAttrs) (*Lease, error) {
-	leases, _, err := m.registry.getSubnets(ctx)
+	// 获取租约信息 实际是向etcd获取子网信息
+	leases, _, err := m.registry.getSubnets(ctx) // registry.go
 	if err != nil {
 		return nil, err
 	}
 
 	// Try to reuse a subnet if there's one that matches our IP
+	// 判断是否存已经创建的租约信息 这里查找实际是数组查找
 	if l := findLeaseByIP(leases, extIaddr); l != nil {
 		// Make sure the existing subnet is still within the configured network
 		if isSubnetConfigCompat(config, l.Subnet) {
@@ -156,7 +172,7 @@ func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extI
 				// Not a reservation
 				ttl = subnetTTL
 			}
-			exp, err := m.registry.updateSubnet(ctx, l.Subnet, attrs, ttl, 0)
+			exp, err := m.registry.updateSubnet(ctx, l.Subnet, attrs, ttl, 0) //更新子网信息
 			if err != nil {
 				return nil, err
 			}
@@ -164,7 +180,7 @@ func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extI
 			l.Attrs = *attrs
 			l.Expiration = exp
 			return l, nil
-		} else {
+		} else { // 删除已有子网信息
 			log.Infof("Found lease (%v) for current IP (%v) but not compatible with current config, deleting", l.Subnet, extIaddr)
 			if err := m.registry.deleteSubnet(ctx, l.Subnet); err != nil {
 				return nil, err
@@ -173,6 +189,7 @@ func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extI
 	}
 
 	// no existing match, check if there was a previous subnet to use
+	// 预先分配的子网 在main.go中函数newSubnetManager进行创建
 	var sn ip.IP4Net
 	if !m.previousSubnet.Empty() {
 		// use previous subnet
@@ -212,13 +229,13 @@ func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extI
 	}
 
 	if sn.Empty() {
-		// no existing match, grab a new one
+		// no existing match, grab a new one 创建一个新的
 		sn, err = m.allocateSubnet(config, leases)
 		if err != nil {
 			return nil, err
 		}
 	}
-
+	// 实际是向etcd存储信息 存活时间是24h
 	exp, err := m.registry.createSubnet(ctx, sn, attrs, subnetTTL)
 	switch {
 	case err == nil:
@@ -271,7 +288,7 @@ func (m *LocalManager) RenewLease(ctx context.Context, lease *Lease) error {
 
 func getNextIndex(cursor interface{}) (uint64, error) {
 	nextIndex := uint64(0)
-
+	// 这种写法是golang的断言方式
 	if wc, ok := cursor.(watchCursor); ok {
 		nextIndex = wc.index
 	} else if s, ok := cursor.(string); ok {
@@ -299,6 +316,12 @@ func (m *LocalManager) leaseWatchReset(ctx context.Context, sn ip.IP4Net) (Lease
 	}, nil
 }
 
+/**
+ * 监视租约
+ * @param ctx 上下文
+ * @param sn 子网管理对象
+ * @param cursor 游标
+ */
 func (m *LocalManager) WatchLease(ctx context.Context, sn ip.IP4Net, cursor interface{}) (LeaseWatchResult, error) {
 	if cursor == nil {
 		return m.leaseWatchReset(ctx, sn)

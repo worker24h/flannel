@@ -79,6 +79,12 @@ type VXLANBackend struct {
 	extIface  *backend.ExternalInterface
 }
 
+/**
+ * 创建backend对象
+ * @param sm 子网管理对象
+ * @param extIface 外部接口
+ * @return 返回backend对象
+ */
 func New(sm subnet.Manager, extIface *backend.ExternalInterface) (backend.Backend, error) {
 	backend := &VXLANBackend{
 		subnetMgr: sm,
@@ -88,6 +94,12 @@ func New(sm subnet.Manager, extIface *backend.ExternalInterface) (backend.Backen
 	return backend, nil
 }
 
+/**
+ * 创建子网属性
+ * @param publicIP 公网ip
+ * @param mac mac地址
+ * @return 返回租约属性
+ */
 func newSubnetAttrs(publicIP net.IP, mac net.HardwareAddr) (*subnet.LeaseAttrs, error) {
 	data, err := json.Marshal(&vxlanLeaseAttrs{hardwareAddr(mac)})
 	if err != nil {
@@ -111,7 +123,7 @@ func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Conf
 	}{
 		VNI: defaultVNI,
 	}
-
+	/* 解析配置 */
 	if len(config.Backend) > 0 {
 		if err := json.Unmarshal(config.Backend, &cfg); err != nil {
 			return nil, fmt.Errorf("error decoding VXLAN backend config: %v", err)
@@ -127,18 +139,19 @@ func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Conf
 		vtepPort:  cfg.Port,
 		gbp:       cfg.GBP,
 	}
-
+	// 创建VXLAN设备
 	dev, err := newVXLANDevice(&devAttrs)
 	if err != nil {
 		return nil, err
 	}
 	dev.directRouting = cfg.DirectRouting
 
+	// 创建子网属性
 	subnetAttrs, err := newSubnetAttrs(be.extIface.ExtAddr, dev.MACAddr())
 	if err != nil {
 		return nil, err
 	}
-
+	//获取租约 local_manager.go 实际上是向etcd存储信息网卡信息 默认有效时长为24h
 	lease, err := be.subnetMgr.AcquireLease(ctx, subnetAttrs)
 	switch err {
 	case nil:
@@ -155,7 +168,7 @@ func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Conf
 		return nil, fmt.Errorf("failed to configure interface %s: %s", dev.link.Attrs().Name, err)
 	}
 
-	return newNetwork(be.subnetMgr, be.extIface, dev, ip.IP4Net{}, lease)
+	return newNetwork(be.subnetMgr, be.extIface, dev, ip.IP4Net{}, lease) //new结构体
 }
 
 // So we can make it JSON (un)marshalable

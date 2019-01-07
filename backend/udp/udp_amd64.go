@@ -66,7 +66,7 @@ func (be *UdpBackend) RegisterNetwork(ctx context.Context, config *subnet.Config
 		PublicIP: ip.FromIP(be.extIface.ExtAddr),
 	}
 
-	l, err := be.sm.AcquireLease(ctx, &attrs)
+	l, err := be.sm.AcquireLease(ctx, &attrs) //获取租约
 	switch err {
 	case nil:
 

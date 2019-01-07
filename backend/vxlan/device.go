@@ -42,6 +42,11 @@ type vxlanDevice struct {
 	directRouting bool
 }
 
+/**
+ * 创建vxlan设备
+ * @param devAttrs 设备属性
+ * @return 返回vxlanDevice对象
+ */
 func newVXLANDevice(devAttrs *vxlanDeviceAttrs) (*vxlanDevice, error) {
 	link := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{
@@ -54,7 +59,7 @@ func newVXLANDevice(devAttrs *vxlanDeviceAttrs) (*vxlanDevice, error) {
 		Learning:     false,
 		GBP:          devAttrs.gbp,
 	}
-
+	// 确定link 为啥名字取为link？？
 	link, err := ensureLink(link)
 	if err != nil {
 		return nil, err
@@ -69,24 +74,25 @@ func ensureLink(vxlan *netlink.Vxlan) (*netlink.Vxlan, error) {
 	if err == syscall.EEXIST {
 		// it's ok if the device already exists as long as config is similar
 		log.V(1).Infof("VXLAN device already exists")
+		// 获取已有vxlan设备信息
 		existing, err := netlink.LinkByName(vxlan.Name)
 		if err != nil {
 			return nil, err
 		}
-
+		// 比较新旧网卡信息
 		incompat := vxlanLinksIncompat(vxlan, existing)
-		if incompat == "" {
+		if incompat == "" { // 表示完全相同 则使用已有的设备
 			log.V(1).Infof("Returning existing device")
 			return existing.(*netlink.Vxlan), nil
 		}
 
-		// delete existing
+		// delete existing 不相同则删除
 		log.Warningf("%q already exists with incompatable configuration: %v; recreating device", vxlan.Name, incompat)
 		if err = netlink.LinkDel(existing); err != nil {
 			return nil, fmt.Errorf("failed to delete interface: %v", err)
 		}
 
-		// create new
+		// create new 创建新的vxlan设备
 		if err = netlink.LinkAdd(vxlan); err != nil {
 			return nil, fmt.Errorf("failed to create vxlan interface: %v", err)
 		}
@@ -179,8 +185,8 @@ func vxlanLinksIncompat(l1, l2 netlink.Link) string {
 		return fmt.Sprintf("link type: %v vs %v", l1.Type(), l2.Type())
 	}
 
-	v1 := l1.(*netlink.Vxlan)
-	v2 := l2.(*netlink.Vxlan)
+	v1 := l1.(*netlink.Vxlan) // 采用golang断言进行类型转换
+	v2 := l2.(*netlink.Vxlan) // 采用golang断言进行类型转换
 
 	if v1.VxlanId != v2.VxlanId {
 		return fmt.Sprintf("vni: %v vs %v", v1.VxlanId, v2.VxlanId)

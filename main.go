@@ -176,7 +176,7 @@ func newSubnetManager() (subnet.Manager, error) {
 	}
 
 	// Attempt to renew the lease for the subnet specified in the subnetFile
-	// 读取配置文件 获取子网配置信息
+	// 读取配置文件 获取子网配置信息 在获取网络租约时 会使用到在local_manager.go 函数tryAcquireLease
 	prevSubnet := ReadSubnetFromSubnetFile(opts.subnetFile)
 
 	return etcdv2.NewLocalManager(cfg, prevSubnet)
@@ -280,6 +280,7 @@ func main() {
 	}
 
 	// Fetch the network config (i.e. what backend to use etc..).
+	// 从etcd中获取配置
 	config, err := getConfig(ctx, sm)
 	if err == errCanceled {
 		wg.Wait()
@@ -296,6 +297,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	/**
+	 * 如果backend指向的是vxlan则RegisterNetwork函数指向vxlan.go文件中RegisterNetwork
+	 * 相当于创建flannel0网卡
+	 */
 	bn, err := be.RegisterNetwork(ctx, config)
 	if err != nil {
 		log.Errorf("Error registering network: %s", err)
@@ -309,7 +314,8 @@ func main() {
 		go network.SetupAndEnsureIPTables(network.MasqRules(config.Network, bn.Lease()))
 	}
 
-	// Always enables forwarding rules. This is needed for Docker versions >1.13 (https://docs.docker.com/engine/userguide/networking/default_network/container-communication/#container-communication-between-hosts)
+	// Always enables forwarding rules. This is needed for Docker versions >1.13
+	// (https://docs.docker.com/engine/userguide/networking/default_network/container-communication/#container-communication-between-hosts)
 	// In Docker 1.12 and earlier, the default FORWARD chain policy was ACCEPT.
 	// In Docker 1.13 and later, Docker sets the default policy of the FORWARD chain to DROP.
 	go network.SetupAndEnsureIPTables(network.ForwardRules(config.Network.String()))
@@ -332,8 +338,10 @@ func main() {
 	daemon.SdNotify(false, "READY=1")
 
 	// Kube subnet mgr doesn't lease the subnet for this node - it just uses the podCidr that's already assigned.
+	// kubernets管理的网络不需要使用该节点
 	if !opts.kubeSubnetMgr {
-		err = MonitorLease(ctx, sm, bn, &wg)
+		// 通过etcd管理网络 会进入此函数 此函数是一个死循环
+		err = MonitorLease(ctx, sm, bn, &wg) //监控该节点 主要用于节点租约过期后 能够快速获取新的租约
 		if err == errInterrupted {
 			// The lease was "revoked" - shut everything down
 			cancel()
@@ -396,6 +404,13 @@ func getConfig(ctx context.Context, sm subnet.Manager) (*subnet.Config, error) {
 	}
 }
 
+/**
+ * 监控租约
+ * @param ctx 上下文
+ * @param sm  子网管理对象
+ * @param bn  backend管理对象
+ * @param wg  waitgroup对象
+ */
 func MonitorLease(ctx context.Context, sm subnet.Manager, bn backend.Network, wg *sync.WaitGroup) error {
 	// Use the subnet manager to start watching leases.
 	evts := make(chan subnet.Event)
@@ -405,14 +420,15 @@ func MonitorLease(ctx context.Context, sm subnet.Manager, bn backend.Network, wg
 		subnet.WatchLease(ctx, sm, bn.Lease().Subnet, evts)
 		wg.Done()
 	}()
-
+	// 计算超时时间
 	renewMargin := time.Duration(opts.subnetLeaseRenewMargin) * time.Minute
 	dur := bn.Lease().Expiration.Sub(time.Now()) - renewMargin
 
+	//死循环 始终监控 当该函数退出表示 flanneld将要退出
 	for {
 		select {
 		case <-time.After(dur):
-			err := sm.RenewLease(ctx, bn.Lease())
+			err := sm.RenewLease(ctx, bn.Lease()) //发生超时需要重新获取租约
 			if err != nil {
 				log.Error("Error renewing lease (trying again in 1 min): ", err)
 				dur = time.Minute

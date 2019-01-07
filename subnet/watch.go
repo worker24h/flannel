@@ -160,9 +160,9 @@ func deleteLease(l []Lease, i int) []Lease {
 // and it needs to diff the latest snapshot with its saved state and generate events
 func WatchLease(ctx context.Context, sm Manager, sn ip.IP4Net, receiver chan Event) {
 	var cursor interface{}
-
+	// 死循环 当有事件发生后 通过chan发到对端
 	for {
-		wr, err := sm.WatchLease(ctx, sn, cursor)
+		wr, err := sm.WatchLease(ctx, sn, cursor) // local_manager.go
 		if err != nil {
 			if err == context.Canceled || err == context.DeadlineExceeded {
 				return
@@ -172,13 +172,13 @@ func WatchLease(ctx context.Context, sm Manager, sn ip.IP4Net, receiver chan Eve
 			time.Sleep(time.Second)
 			continue
 		}
-
-		if len(wr.Snapshot) > 0 {
+		// 事件发生
+		if len(wr.Snapshot) > 0 { //添加事件
 			receiver <- Event{
 				Type:  EventAdded,
 				Lease: wr.Snapshot[0],
 			}
-		} else {
+		} else { //删除事件
 			receiver <- wr.Events[0]
 		}
 
