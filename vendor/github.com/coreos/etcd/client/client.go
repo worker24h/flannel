@@ -357,7 +357,7 @@ func (c *httpClusterClient) Do(ctx context.Context, act httpAction) (*http.Respo
 	for i := pinned; i < leps+pinned; i++ {
 		k := i % leps
 		hc := c.clientFactory(eps[k])
-		resp, body, err = hc.Do(ctx, action)
+		resp, body, err = hc.Do(ctx, action) // redirectFollowingHTTPClient
 		if err != nil {
 			cerr.Errors = append(cerr.Errors, err)
 			if err == ctx.Err() {
@@ -600,7 +600,7 @@ func (r *redirectFollowingHTTPClient) Do(ctx context.Context, act httpAction) (*
 				return nil, nil, err
 			}
 		}
-		resp, body, err := r.client.Do(ctx, next)
+		resp, body, err := r.client.Do(ctx, next) //simpleHTTPClient
 		if err != nil {
 			return nil, nil, err
 		}

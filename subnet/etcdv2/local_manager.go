@@ -323,10 +323,12 @@ func (m *LocalManager) leaseWatchReset(ctx context.Context, sn ip.IP4Net) (Lease
  * @param cursor 游标
  */
 func (m *LocalManager) WatchLease(ctx context.Context, sn ip.IP4Net, cursor interface{}) (LeaseWatchResult, error) {
-	if cursor == nil {
+	if cursor == nil {// 第一次进入
 		return m.leaseWatchReset(ctx, sn)
 	}
-
+	/**
+	 * etcd每次修改数据都会修改索引 因此
+	 */
 	nextIndex, err := getNextIndex(cursor)
 	if err != nil {
 		return LeaseWatchResult{}, err

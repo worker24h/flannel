@@ -419,7 +419,7 @@ func (k *httpKeysAPI) Get(ctx context.Context, key string, opts *GetOptions) (*R
 		act.Quorum = opts.Quorum
 	}
 
-	resp, body, err := k.client.Do(ctx, act)
+	resp, body, err := k.client.Do(ctx, act) //client.go httpClusterClient
 	if err != nil {
 		return nil, err
 	}

@@ -127,7 +127,7 @@ func (esr *etcdSubnetRegistry) getNetworkConfig(ctx context.Context) (string, er
 // point for etcd watch.
 func (esr *etcdSubnetRegistry) getSubnets(ctx context.Context) ([]Lease, uint64, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "subnets")
-	resp, err := esr.client().Get(ctx, key, &etcd.GetOptions{Recursive: true, Quorum: true})
+	resp, err := esr.client().Get(ctx, key, &etcd.GetOptions{Recursive: true, Quorum: true}) //keys.go
 	if err != nil {
 		if etcdErr, ok := err.(etcd.Error); ok && etcdErr.Code == etcd.ErrorCodeKeyNotFound {
 			// key not found: treat it as empty set
@@ -146,7 +146,7 @@ func (esr *etcdSubnetRegistry) getSubnets(ctx context.Context) ([]Lease, uint64,
 
 		leases = append(leases, *l)
 	}
-
+	// resp.Index 是
 	return leases, resp.Index, nil
 }
 
@@ -156,7 +156,7 @@ func (esr *etcdSubnetRegistry) getSubnet(ctx context.Context, sn ip.IP4Net) (*Le
 	if err != nil {
 		return nil, 0, err
 	}
-
+	log.Warningf("Ignoring bad subnet node: %v", err)
 	l, err := nodeToLease(resp.Node)
 	return l, resp.Index, err
 }
