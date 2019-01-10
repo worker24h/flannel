@@ -177,6 +177,7 @@ func newSubnetManager() (subnet.Manager, error) {
 
 	// Attempt to renew the lease for the subnet specified in the subnetFile
 	// 读取配置文件 获取子网配置信息 在获取网络租约时 会使用到在local_manager.go 函数tryAcquireLease
+	// opts.subnetFile 默认路径是/run/flannel/subnet.env
 	prevSubnet := ReadSubnetFromSubnetFile(opts.subnetFile)
 
 	return etcdv2.NewLocalManager(cfg, prevSubnet)
@@ -288,7 +289,7 @@ func main() {
 	}
 
 	// Create a backend manager then use it to create the backend and register the network with it.
-	bm := backend.NewManager(ctx, sm, extIface)
+	bm := backend.NewManager(ctx, sm, extIface) //创建manager对象
 	be, err := bm.GetBackend(config.BackendType)
 	if err != nil {
 		log.Errorf("Error fetching backend: %s", err)
@@ -299,7 +300,10 @@ func main() {
 
 	/**
 	 * 如果backend指向的是vxlan则RegisterNetwork函数指向vxlan.go文件中RegisterNetwork
-	 * 相当于创建flannel0网卡
+	 * 相当于创建网卡。
+	 * vxlan模式 flannel.VNI VNI为vlan id
+	 * udp模式   flannel.数字 从0开始
+	 * 这个是非常重要的函数
 	 */
 	bn, err := be.RegisterNetwork(ctx, config)
 	if err != nil {
@@ -318,7 +322,8 @@ func main() {
 	// (https://docs.docker.com/engine/userguide/networking/default_network/container-communication/#container-communication-between-hosts)
 	// In Docker 1.12 and earlier, the default FORWARD chain policy was ACCEPT.
 	// In Docker 1.13 and later, Docker sets the default policy of the FORWARD chain to DROP.
-	go network.SetupAndEnsureIPTables(network.ForwardRules(config.Network.String()))
+	// 设置防火墙策略
+	go network.SetupAndEnsureIPTables(network.ForwardRules(config.Network.String())) // iptables.go
 
 	if err := WriteSubnetFile(opts.subnetFile, config.Network, opts.ipMasq, bn); err != nil {
 		// Continue, even though it failed.
@@ -331,7 +336,7 @@ func main() {
 	log.Info("Running backend.")
 	wg.Add(1)
 	go func() {
-		bn.Run(ctx)
+		bn.Run(ctx) //如果是vxlan网络 执行的是vxlan_network.go中Run
 		wg.Done()
 	}()
 

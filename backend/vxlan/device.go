@@ -59,7 +59,7 @@ func newVXLANDevice(devAttrs *vxlanDeviceAttrs) (*vxlanDevice, error) {
 		Learning:     false,
 		GBP:          devAttrs.gbp,
 	}
-	// 确定link 为啥名字取为link？？
+	//创建网卡 此处使用link单词 是和linux中ip命令行 link保持一致
 	link, err := ensureLink(link)
 	if err != nil {
 		return nil, err
@@ -69,8 +69,12 @@ func newVXLANDevice(devAttrs *vxlanDeviceAttrs) (*vxlanDevice, error) {
 	}, nil
 }
 
+/**
+ * 创建网卡
+ * @param vxlan vxlan信息
+ */
 func ensureLink(vxlan *netlink.Vxlan) (*netlink.Vxlan, error) {
-	err := netlink.LinkAdd(vxlan)
+	err := netlink.LinkAdd(vxlan) //link_linux.go
 	if err == syscall.EEXIST {
 		// it's ok if the device already exists as long as config is similar
 		log.V(1).Infof("VXLAN device already exists")
@@ -115,7 +119,7 @@ func ensureLink(vxlan *netlink.Vxlan) (*netlink.Vxlan, error) {
 }
 
 func (dev *vxlanDevice) Configure(ipn ip.IP4Net) error {
-	if err := ip.EnsureV4AddressOnLink(ipn, dev.link); err != nil {
+	if err := ip.EnsureV4AddressOnLink(ipn, dev.link); err != nil { // iface.go
 		return fmt.Errorf("failed to ensure address of interface %s: %s", dev.link.Attrs().Name, err)
 	}
 
@@ -144,7 +148,7 @@ func (dev *vxlanDevice) AddFDB(n neighbor) error {
 		Flags:        netlink.NTF_SELF,
 		IP:           n.IP.ToIP(),
 		HardwareAddr: n.MAC,
-	})
+	}) // 调用neigh_linux.go 中函数
 }
 
 func (dev *vxlanDevice) DelFDB(n neighbor) error {

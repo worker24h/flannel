@@ -642,7 +642,7 @@ func (h *Handle) LinkAdd(link Link) error {
 		return fmt.Errorf("LinkAttrs.Name cannot be empty!")
 	}
 
-	if tuntap, ok := link.(*Tuntap); ok {
+	if tuntap, ok := link.(*Tuntap); ok { // vxlan不会进入此分支
 		// TODO: support user
 		// TODO: support group
 		// TODO: multi_queue
@@ -750,12 +750,12 @@ func (h *Handle) LinkAdd(link Link) error {
 	linkInfo := nl.NewRtAttr(syscall.IFLA_LINKINFO, nil)
 	nl.NewRtAttrChild(linkInfo, nl.IFLA_INFO_KIND, nl.NonZeroTerminated(link.Type()))
 
-	if vlan, ok := link.(*Vlan); ok {
+	if vlan, ok := link.(*Vlan); ok { // vlan设备
 		b := make([]byte, 2)
 		native.PutUint16(b, uint16(vlan.VlanId))
 		data := nl.NewRtAttrChild(linkInfo, nl.IFLA_INFO_DATA, nil)
 		nl.NewRtAttrChild(data, nl.IFLA_VLAN_ID, b)
-	} else if veth, ok := link.(*Veth); ok {
+	} else if veth, ok := link.(*Veth); ok { // veth设备
 		data := nl.NewRtAttrChild(linkInfo, nl.IFLA_INFO_DATA, nil)
 		peer := nl.NewRtAttrChild(data, nl.VETH_INFO_PEER, nil)
 		nl.NewIfInfomsgChild(peer, syscall.AF_UNSPEC)
@@ -767,11 +767,11 @@ func (h *Handle) LinkAdd(link Link) error {
 			nl.NewRtAttrChild(peer, syscall.IFLA_MTU, nl.Uint32Attr(uint32(base.MTU)))
 		}
 
-	} else if vxlan, ok := link.(*Vxlan); ok {
+	} else if vxlan, ok := link.(*Vxlan); ok { //vxlan设备
 		addVxlanAttrs(vxlan, linkInfo)
 	} else if bond, ok := link.(*Bond); ok {
 		addBondAttrs(bond, linkInfo)
-	} else if ipv, ok := link.(*IPVlan); ok {
+	} else if ipv, ok := link.(*IPVlan); ok { // ipvlan设备
 		data := nl.NewRtAttrChild(linkInfo, nl.IFLA_INFO_DATA, nil)
 		nl.NewRtAttrChild(data, nl.IFLA_IPVLAN_MODE, nl.Uint16Attr(uint16(ipv.Mode)))
 	} else if macv, ok := link.(*Macvlan); ok {
@@ -796,12 +796,12 @@ func (h *Handle) LinkAdd(link Link) error {
 
 	req.AddData(linkInfo)
 
-	_, err := req.Execute(syscall.NETLINK_ROUTE, 0)
+	_, err := req.Execute(syscall.NETLINK_ROUTE, 0) //执行到这里表示 网卡创建成功可通过ip link show查看
 	if err != nil {
 		return err
 	}
 
-	h.ensureIndex(base)
+	h.ensureIndex(base) // 获取网卡索引 通过ip link show显示出来的数字
 
 	// can't set master during create, so set it afterwards
 	if base.MasterIndex != 0 {

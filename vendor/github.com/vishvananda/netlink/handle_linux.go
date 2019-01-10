@@ -98,7 +98,7 @@ func (h *Handle) Delete() {
 func (h *Handle) newNetlinkRequest(proto, flags int) *nl.NetlinkRequest {
 	// Do this so that package API still use nl package variable nextSeqNr
 	if h.sockets == nil {
-		return nl.NewNetlinkRequest(proto, flags)
+		return nl.NewNetlinkRequest(proto, flags) // nl_linux.go
 	}
 	return &nl.NetlinkRequest{
 		NlMsghdr: syscall.NlMsghdr{

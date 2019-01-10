@@ -27,12 +27,13 @@ import (
 // and communicates addition/deletion events on receiver channel. It takes care
 // of handling "fall-behind" logic where the history window has advanced too far
 // and it needs to diff the latest snapshot with its saved state and generate events
+// 调用的地方在 vxlan_network.go中Run函数
 func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan []Event) {
 	lw := &leaseWatcher{
 		ownLease: ownLease,
 	}
 	var cursor interface{}
-
+	// 死循环 循环监听
 	for {
 		res, err := sm.WatchLeases(ctx, cursor)
 		if err != nil {
@@ -48,7 +49,7 @@ func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan
 		cursor = res.Cursor
 
 		var batch []Event
-
+		// 表示有事件发生
 		if len(res.Events) > 0 {
 			batch = lw.update(res.Events)
 		} else {
@@ -56,7 +57,7 @@ func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan
 		}
 
 		if len(batch) > 0 {
-			receiver <- batch
+			receiver <- batch //接收端在vxlan_network.go中Run
 		}
 	}
 }

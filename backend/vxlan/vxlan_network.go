@@ -60,6 +60,9 @@ func (nw *network) Run(ctx context.Context) {
 	log.V(0).Info("watching for new subnet leases")
 	events := make(chan []subnet.Event)
 	wg.Add(1)
+	/**
+	 * 对所有租约进行监控 调用watch.go 中WatchLeases函数
+	 */
 	go func() {
 		subnet.WatchLeases(ctx, nw.subnetMgr, nw.SubnetLease, events)
 		log.V(1).Info("WatchLeases exited")
@@ -67,11 +70,11 @@ func (nw *network) Run(ctx context.Context) {
 	}()
 
 	defer wg.Wait()
-
+	// 死循环
 	for {
 		select {
 		case evtBatch := <-events:
-			nw.handleSubnetEvents(evtBatch)
+			nw.handleSubnetEvents(evtBatch) //有事件发生需要处理
 
 		case <-ctx.Done():
 			return
@@ -87,6 +90,10 @@ type vxlanLeaseAttrs struct {
 	VtepMAC hardwareAddr
 }
 
+/**
+ * 处理事件
+ * @param batch 事件对象
+ */
 func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 	for _, event := range batch {
 		sn := event.Lease.Subnet
@@ -95,7 +102,7 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 			log.Warningf("ignoring non-vxlan subnet(%s): type=%v", sn, attrs.BackendType)
 			continue
 		}
-
+		// 解析json格式化
 		var vxlanAttrs vxlanLeaseAttrs
 		if err := json.Unmarshal(attrs.BackendData, &vxlanAttrs); err != nil {
 			log.Error("error decoding subnet lease JSON: ", err)

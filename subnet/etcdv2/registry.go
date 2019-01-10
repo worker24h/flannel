@@ -101,7 +101,7 @@ func newEtcdSubnetRegistry(config *EtcdConfig, cliNewFunc etcdNewFunc) (Registry
 	if cliNewFunc != nil {
 		r.cliNewFunc = cliNewFunc
 	} else {
-		r.cliNewFunc = newEtcdClient
+		r.cliNewFunc = newEtcdClient //并没有发起 tcp连接只是创建对象 用于后续使用
 	}
 
 	var err error
@@ -215,21 +215,42 @@ func (esr *etcdSubnetRegistry) deleteSubnet(ctx context.Context, sn ip.IP4Net) e
 	return err
 }
 
+/**
+ * 监控整个子网
+ * @param ctx 上下文
+ * @param since 索引值
+ * @param sn 子网地址
+ * 发送http请求： /v2/keys/coreos.com/network/subnets?recursive=true&wait=true&waitIndex=96
+ *               其中96=since+1,监控整个子网
+ */
 func (esr *etcdSubnetRegistry) watchSubnets(ctx context.Context, since uint64) (Event, uint64, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "subnets")
 	opts := &etcd.WatcherOptions{
 		AfterIndex: since,
 		Recursive:  true,
 	}
+	/**
+	 * 注意Next发送http请求 这里会一直阻塞 直到有http reponse响应回来才会继续执行后流程
+	 * 那么http response什么时候返回呢？ 只有子网数据有变化后才会有响应，那么子网数据变化又指的是什么呢?
+	 * 有新的节点加入子网或者已有子网被删除才会返回http response
+	 */
 	e, err := esr.client().Watcher(key, opts).Next(ctx)
 	if err != nil {
 		return Event{}, 0, err
 	}
-
+	// 解析响应
 	evt, err := parseSubnetWatchResponse(e)
 	return evt, e.Node.ModifiedIndex, err
 }
 
+/**
+ * 监控特定子网
+ * @param ctx 上下文
+ * @param since 索引值
+ * @param sn 子网地址
+ * 发送http请求： /v2/keys/coreos.com/network/subnets/172.17.9.0?recursive=true&wait=true&waitIndex=96
+ *               其中96=since+1,特定子网是172.17.9.0
+ */
 func (esr *etcdSubnetRegistry) watchSubnet(ctx context.Context, since uint64, sn ip.IP4Net) (Event, uint64, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "subnets", MakeSubnetKey(sn))
 	opts := &etcd.WatcherOptions{
@@ -262,6 +283,11 @@ func (esr *etcdSubnetRegistry) resetClient() {
 	}
 }
 
+/**
+ * 解析监控应答
+ * @param resp 应答
+ * 根据响应不同类型 生成不同事件（删除、超时、添加）
+ */
 func parseSubnetWatchResponse(resp *etcd.Response) (Event, error) {
 	sn := ParseSubnetKey(resp.Node.Key)
 	if sn == nil {
@@ -269,13 +295,13 @@ func parseSubnetWatchResponse(resp *etcd.Response) (Event, error) {
 	}
 
 	switch resp.Action {
-	case "delete", "expire":
+	case "delete", "expire": //删除、超时事件
 		return Event{
 			EventRemoved,
 			Lease{Subnet: *sn},
 		}, nil
 
-	default:
+	default: //添加事件
 		attrs := &LeaseAttrs{}
 		err := json.Unmarshal([]byte(resp.Node.Value), attrs)
 		if err != nil {

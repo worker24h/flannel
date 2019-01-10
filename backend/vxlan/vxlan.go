@@ -107,7 +107,7 @@ func newSubnetAttrs(publicIP net.IP, mac net.HardwareAddr) (*subnet.LeaseAttrs, 
 	}
 
 	return &subnet.LeaseAttrs{
-		PublicIP:    ip.FromIP(publicIP),
+		PublicIP:    ip.FromIP(publicIP), // 物理主机默认路由所在ip
 		BackendType: "vxlan",
 		BackendData: json.RawMessage(data),
 	}, nil
@@ -152,7 +152,7 @@ func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Conf
 		return nil, err
 	}
 	//获取租约 local_manager.go 实际上是向etcd存储信息网卡信息 默认有效时长为24h
-	lease, err := be.subnetMgr.AcquireLease(ctx, subnetAttrs)
+	lease, err := be.subnetMgr.AcquireLease(ctx, subnetAttrs) // local_manager.go
 	switch err {
 	case nil:
 	case context.Canceled, context.DeadlineExceeded:
@@ -164,6 +164,7 @@ func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Conf
 	// Ensure that the device has a /32 address so that no broadcast routes are created.
 	// This IP is just used as a source address for host to workload traffic (so
 	// the return path for the traffic has an address on the flannel network to use as the destination)
+	// 配置vxlan网卡ip并且设置成up状态 执行完这步骤 ifconfig才可以看到 之前只能通过ip link show查看
 	if err := dev.Configure(ip.IP4Net{IP: lease.Subnet.IP, PrefixLen: 32}); err != nil {
 		return nil, fmt.Errorf("failed to configure interface %s: %s", dev.link.Attrs().Name, err)
 	}

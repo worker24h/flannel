@@ -36,7 +36,7 @@ func parseBackendType(be json.RawMessage) (string, error) {
 		Type string
 	}
 
-	if len(be) == 0 {
+	if len(be) == 0 { //默认是udp形式
 		return "udp", nil
 	} else if err := json.Unmarshal(be, &bt); err != nil {
 		return "", fmt.Errorf("error decoding Backend property of config: %v", err)
@@ -46,7 +46,7 @@ func parseBackendType(be json.RawMessage) (string, error) {
 }
 
 func ParseConfig(s string) (*Config, error) {
-	cfg := new(Config)
+	cfg := new(Config) //结构体定义在上面
 	err := json.Unmarshal([]byte(s), cfg)
 	if err != nil {
 		return nil, err

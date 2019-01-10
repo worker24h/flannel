@@ -70,7 +70,7 @@ func (c watchCursor) String() string {
 }
 
 func NewLocalManager(config *EtcdConfig, prevSubnet ip.IP4Net) (Manager, error) {
-	r, err := newEtcdSubnetRegistry(config, nil) // 生成Registry对象
+	r, err := newEtcdSubnetRegistry(config, nil) // 生成Registry对象 registry.go
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (m *LocalManager) GetNetworkConfig(ctx context.Context) (*Config, error) {
  * @return 返回租约信息
  */
 func (m *LocalManager) AcquireLease(ctx context.Context, attrs *LeaseAttrs) (*Lease, error) {
-	config, err := m.GetNetworkConfig(ctx)
+	config, err := m.GetNetworkConfig(ctx) //获取配置信息
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func findLeaseBySubnet(leases []Lease, subnet ip.IP4Net) *Lease {
  */
 func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extIaddr ip.IP4, attrs *LeaseAttrs) (*Lease, error) {
 	// 获取租约信息 实际是向etcd获取子网信息
-	leases, _, err := m.registry.getSubnets(ctx) // registry.go
+	leases, _, err := m.registry.getSubnets(ctx) // registry.go getSubnets
 	if err != nil {
 		return nil, err
 	}
@@ -229,13 +229,13 @@ func (m *LocalManager) tryAcquireLease(ctx context.Context, config *Config, extI
 	}
 
 	if sn.Empty() {
-		// no existing match, grab a new one 创建一个新的
+		// no existing match, grab a new one 创建一个新的subnets
 		sn, err = m.allocateSubnet(config, leases)
 		if err != nil {
 			return nil, err
 		}
 	}
-	// 实际是向etcd存储信息 存活时间是24h
+	// 实际是向etcd存储信息 存活时间是24h 这样etcd中就有subnets信息
 	exp, err := m.registry.createSubnet(ctx, sn, attrs, subnetTTL)
 	switch {
 	case err == nil:
@@ -305,7 +305,7 @@ func getNextIndex(cursor interface{}) (uint64, error) {
 }
 
 func (m *LocalManager) leaseWatchReset(ctx context.Context, sn ip.IP4Net) (LeaseWatchResult, error) {
-	l, index, err := m.registry.getSubnet(ctx, sn)
+	l, index, err := m.registry.getSubnet(ctx, sn) // registry.go getSubnets
 	if err != nil {
 		return LeaseWatchResult{}, err
 	}
@@ -317,7 +317,7 @@ func (m *LocalManager) leaseWatchReset(ctx context.Context, sn ip.IP4Net) (Lease
 }
 
 /**
- * 监视租约
+ * 监视特定租约
  * @param ctx 上下文
  * @param sn 子网管理对象
  * @param cursor 游标
@@ -352,6 +352,12 @@ func (m *LocalManager) WatchLease(ctx context.Context, sn ip.IP4Net, cursor inte
 	}
 }
 
+/**
+ * 监视所有租约  实质是监控子网是否有变化(新增、删除、超时)
+ * @param ctx 上下文
+ * @param sn 子网管理对象
+ * @param cursor 游标
+ */
 func (m *LocalManager) WatchLeases(ctx context.Context, cursor interface{}) (LeaseWatchResult, error) {
 	if cursor == nil {
 		return m.leasesWatchReset(ctx)
@@ -365,7 +371,7 @@ func (m *LocalManager) WatchLeases(ctx context.Context, cursor interface{}) (Lea
 	evt, index, err := m.registry.watchSubnets(ctx, nextIndex)
 
 	switch {
-	case err == nil:
+	case err == nil: // 返回正确数据
 		return LeaseWatchResult{
 			Events: []Event{evt},
 			Cursor: watchCursor{index},
@@ -389,7 +395,7 @@ func isIndexTooSmall(err error) bool {
 func (m *LocalManager) leasesWatchReset(ctx context.Context) (LeaseWatchResult, error) {
 	wr := LeaseWatchResult{}
 
-	leases, index, err := m.registry.getSubnets(ctx)
+	leases, index, err := m.registry.getSubnets(ctx) //
 	if err != nil {
 		return wr, fmt.Errorf("failed to retrieve subnet leases: %v", err)
 	}
