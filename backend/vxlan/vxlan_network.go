@@ -133,8 +133,8 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 		}
 
 		switch event.Type {
-		case subnet.EventAdded:
-			if directRoutingOK {
+		case subnet.EventAdded: //添加事件
+			if directRoutingOK { // 直接路由方式
 				log.V(2).Infof("Adding direct route to subnet: %s PublicIP: %s", sn, attrs.PublicIP)
 
 				if err := netlink.RouteReplace(&directRoute); err != nil {
@@ -143,11 +143,12 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 				}
 			} else {
 				log.V(2).Infof("adding subnet: %s PublicIP: %s VtepMAC: %s", sn, attrs.PublicIP, net.HardwareAddr(vxlanAttrs.VtepMAC))
+				// 添加arp表项
 				if err := nw.dev.AddARP(neighbor{IP: sn.IP, MAC: net.HardwareAddr(vxlanAttrs.VtepMAC)}); err != nil {
 					log.Error("AddARP failed: ", err)
 					continue
 				}
-
+				// 添加fdb表项
 				if err := nw.dev.AddFDB(neighbor{IP: attrs.PublicIP, MAC: net.HardwareAddr(vxlanAttrs.VtepMAC)}); err != nil {
 					log.Error("AddFDB failed: ", err)
 
@@ -161,6 +162,7 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 
 				// Set the route - the kernel would ARP for the Gw IP address if it hadn't already been set above so make sure
 				// this is done last.
+				// 更新路由表项
 				if err := netlink.RouteReplace(&vxlanRoute); err != nil {
 					log.Errorf("failed to add vxlanRoute (%s -> %s): %v", vxlanRoute.Dst, vxlanRoute.Gw, err)
 
@@ -176,7 +178,7 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 					continue
 				}
 			}
-		case subnet.EventRemoved:
+		case subnet.EventRemoved: //删除事件
 			if directRoutingOK {
 				log.V(2).Infof("Removing direct route to subnet: %s PublicIP: %s", sn, attrs.PublicIP)
 				if err := netlink.RouteDel(&directRoute); err != nil {
@@ -186,14 +188,15 @@ func (nw *network) handleSubnetEvents(batch []subnet.Event) {
 				log.V(2).Infof("removing subnet: %s PublicIP: %s VtepMAC: %s", sn, attrs.PublicIP, net.HardwareAddr(vxlanAttrs.VtepMAC))
 
 				// Try to remove all entries - don't bail out if one of them fails.
+				// 删除arp
 				if err := nw.dev.DelARP(neighbor{IP: sn.IP, MAC: net.HardwareAddr(vxlanAttrs.VtepMAC)}); err != nil {
 					log.Error("DelARP failed: ", err)
 				}
-
+				// 删除fdb表项
 				if err := nw.dev.DelFDB(neighbor{IP: attrs.PublicIP, MAC: net.HardwareAddr(vxlanAttrs.VtepMAC)}); err != nil {
 					log.Error("DelFDB failed: ", err)
 				}
-
+				// 删除路由
 				if err := netlink.RouteDel(&vxlanRoute); err != nil {
 					log.Errorf("failed to delete vxlanRoute (%s -> %s): %v", vxlanRoute.Dst, vxlanRoute.Gw, err)
 				}

@@ -429,7 +429,7 @@ func MonitorLease(ctx context.Context, sm subnet.Manager, bn backend.Network, wg
 	renewMargin := time.Duration(opts.subnetLeaseRenewMargin) * time.Minute
 	dur := bn.Lease().Expiration.Sub(time.Now()) - renewMargin
 
-	//死循环 始终监控 当该函数退出表示 flanneld将要退出
+	//死循环 事件处理 始终监控 当该函数退出表示 flanneld将要退出
 	for {
 		select {
 		case <-time.After(dur):

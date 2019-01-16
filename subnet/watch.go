@@ -28,6 +28,7 @@ import (
 // of handling "fall-behind" logic where the history window has advanced too far
 // and it needs to diff the latest snapshot with its saved state and generate events
 // 调用的地方在 vxlan_network.go中Run函数
+// 发送http请求类似：/v2/keys/coreos.com/network/subnets?recursive=true&wait=true&waitIndex=96
 func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan []Event) {
 	lw := &leaseWatcher{
 		ownLease: ownLease,
@@ -35,7 +36,7 @@ func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan
 	var cursor interface{}
 	// 死循环 循环监听
 	for {
-		res, err := sm.WatchLeases(ctx, cursor)
+		res, err := sm.WatchLeases(ctx, cursor) // local_manager.go
 		if err != nil {
 			if err == context.Canceled || err == context.DeadlineExceeded {
 				return
@@ -49,7 +50,7 @@ func WatchLeases(ctx context.Context, sm Manager, ownLease *Lease, receiver chan
 		cursor = res.Cursor
 
 		var batch []Event
-		// 表示有事件发生
+		// 表示有事件发生 update和reset函数中都会过滤掉自己所在租约事件
 		if len(res.Events) > 0 {
 			batch = lw.update(res.Events)
 		} else {
@@ -109,6 +110,7 @@ func (lw *leaseWatcher) update(events []Event) []Event {
 	batch := []Event{}
 
 	for _, e := range events {
+		// 过滤掉自己 因为自己的监控在另外一个协程中
 		if lw.ownLease != nil && e.Lease.Subnet.Equal(lw.ownLease.Subnet) {
 			continue
 		}
@@ -160,12 +162,12 @@ func deleteLease(l []Lease, i int) []Lease {
 // of handling "fall-behind" logic where the history window has advanced too far
 // and it needs to diff the latest snapshot with its saved state and generate events
 /**
-  * 监视租约
-  * @param ctx 上下文
-  * @param sm subnet管理对象
-  * @param sn  子网ip
-  * @param receiver 接收端
-  */
+ * 监视租约
+ * @param ctx 上下文
+ * @param sm subnet管理对象
+ * @param sn  子网ip
+ * @param receiver 接收端
+ */
 func WatchLease(ctx context.Context, sm Manager, sn ip.IP4Net, receiver chan Event) {
 	var cursor interface{}
 	// 死循环 当有事件发生后 通过chan发到对端

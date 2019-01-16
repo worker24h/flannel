@@ -103,7 +103,7 @@ func ensureLink(vxlan *netlink.Vxlan) (*netlink.Vxlan, error) {
 	} else if err != nil {
 		return nil, err
 	}
-
+	// 根据索引进行查找设备
 	ifindex := vxlan.Index
 	link, err := netlink.LinkByIndex(vxlan.Index)
 	if err != nil {

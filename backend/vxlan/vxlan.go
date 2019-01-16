@@ -113,6 +113,11 @@ func newSubnetAttrs(publicIP net.IP, mac net.HardwareAddr) (*subnet.LeaseAttrs, 
 	}, nil
 }
 
+/**
+ * 注册网络
+ * @param ctx 上下文
+ * @param config 子网配置
+ */
 func (be *VXLANBackend) RegisterNetwork(ctx context.Context, config *subnet.Config) (backend.Network, error) {
 	// Parse our configuration
 	cfg := struct {
